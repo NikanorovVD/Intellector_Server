@@ -5,103 +5,89 @@ using System.Threading;
 using System.IO;
 using System.Text;
 
-namespace Server
+namespace IntellectorServer
 {
-    class GameInfo
-    {
-        public uint ID { get; set; }
-        public string Name { get; set; }
-        public TcpClient Client { get; set; }
-        public Thread WaitingManager { get; set; }
-
-        public static int max_name_length = 20;
-
-        public GameInfo(uint iD, string name, TcpClient client)
-        {
-            ID = iD;
-            Name = name;
-            Client = client;
-        }
-        public void Send(NetworkStream stream)
-        {
-            stream.Write(BitConverter.GetBytes(ID), 0, 4);
-            stream.Write(Encoding.Default.GetBytes(Name), 0, Encoding.Default.GetBytes(Name).Length);
-        }
-    }
     class Program
     {
         static TcpListener serverSocket;
         static Dictionary<uint, GameInfo> WaitingGames;
         static uint game_id = 1;
         static string password = "a3P1>8]Ы-/йЧяЭ975?:$qcDыФ9&e@1a<c{a/";
+        static LogWriter logWriter;
 
-        static Queue<string> LogQueue;
-        static string LogFilePath = "log.txt";
-        static void WriteLog(string messeage)
+        static void SendMesseage(byte mes, NetworkStream stream)
         {
-            Console.WriteLine(messeage);
-            using (StreamWriter writer = new StreamWriter(LogFilePath, true))
-            {
-                writer.WriteLine(messeage);
-            }
+            byte[] send_bytes = new byte[1] { mes };
+            stream.Write(send_bytes, 0, 1);
+        }
+
+        static byte RecvMesseage(NetworkStream stream)
+        {
+            byte[] recv_bytes = new byte[1];
+            stream.Read(recv_bytes, 0, 1);
+            return recv_bytes[0];
         }
 
         static void Main(string[] args)
         {
             serverSocket = new TcpListener(System.Net.IPAddress.Any, 7001);
-            LogQueue = new Queue<string>();
-            WaitingGames = new Dictionary<uint, GameInfo>(); 
+            WaitingGames = new Dictionary<uint, GameInfo>();
 
-            Thread LogWriter = new Thread(WriteLogs);
-            LogWriter.Start();
+            logWriter = new LogWriter();
+            logWriter.Start();
 
             while (true)
             {
                 try
                 {
-                    LogQueue.Enqueue("Ожидание подключения");
-                    LogQueue.Enqueue($"Ожидает клиентов : {WaitingGames.Count}");
+                    logWriter.Write($"Ожидание подключения\nОжидает клиентов : {WaitingGames.Count}");
                     serverSocket.Start();
                     TcpClient clientSocket = serverSocket.AcceptTcpClient();
-                    LogQueue.Enqueue($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
-
+                    logWriter.Write($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
                     ManageNewClient(clientSocket);
                 }
                 catch (Exception e)
                 {
-                    LogQueue.Enqueue(e.Message);
+                    logWriter.Write(e.Message);
                 }
             }
         }
 
         static void ManageNewClient(TcpClient client)
         {
+            const byte no_such_game_ans = 99;
+            const byte games_list_request = 100;
+            const byte create_game_request = 0;
+
             if (!CheckPassword())
             {
-                LogQueue.Enqueue("Неверный пароль");
+                logWriter.Write("Неверный пароль");
                 client.Close();
-                LogQueue.Enqueue("Клиент отключен");
+                logWriter.Write("Клиент отключен");
                 return;
             }
-            LogQueue.Enqueue("Пароль верный");
-            byte[] get_bytes = new byte[1];
+            logWriter.Write("ПАРОЛЬ ВЕРНЫЙ");
+
+
             try
             {
                 NetworkStream stream = client.GetStream();
-                stream.Read(get_bytes, 0, 1);
-                uint wanted_id = get_bytes[0];
-                if(wanted_id == 100)
+                uint wanted_id = RecvMesseage(stream);
+                if(wanted_id == games_list_request)
                 {
-                    LogQueue.Enqueue("Запрошен список игр");
+                    logWriter.Write("Запрошен список игр");
                     SendGamesInfo(stream);
                     client.Close();
                 }
-                else if(wanted_id == 0)
+                else if(wanted_id == create_game_request)
                 {
-                    LogQueue.Enqueue("Запрос создания игры");
-                    GameInfo game = CreateNewGame();
+                    logWriter.Write("Запрос создания игры");
+
+                    string name = ReadName();
+                    GameInfo game = new GameInfo(game_id, name, client);
                     WaitingGames.Add(game_id, game);
-                    LogQueue.Enqueue($"Игра успешно создана: ID - {game.ID}, Name - {game.Name}");
+
+                    logWriter.Write($"Игра успешно создана: ID - {game.ID}, Name - {game.Name}");
                     game_id++; if (game_id == 100) game_id++;
 
                     game.WaitingManager = new Thread(() => CommunicateWithWaitingClient(client, game.ID));
@@ -118,22 +104,22 @@ namespace Server
                     }
                     else
                     {
-                        client.GetStream().Write(new byte[] { 99 }, 0, 1);
+                        SendMesseage(no_such_game_ans, client.GetStream());
                         client.Close();
                     }
                 }
             }
             catch(Exception e)
             {
-                LogQueue.Enqueue(e.Message);
+                logWriter.Write(e.Message);
             }
 
-            GameInfo CreateNewGame()
+            string ReadName()
             {
-                byte[] s = new byte[20];
-                client.GetStream().Read(s, 0, 20);
-                string name = Encoding.Default.GetString(s).TrimEnd('\0'); 
-                return new GameInfo(game_id, name, client);
+                int max_name_length = GameInfo.max_name_length;
+                byte[] name_bytes = new byte[max_name_length];
+                client.GetStream().Read(name_bytes, 0, max_name_length);
+                return Encoding.Default.GetString(name_bytes).TrimEnd('\0');
             }
 
             bool CheckPassword()
@@ -161,11 +147,11 @@ namespace Server
                 NetworkStream stream1 = client1.GetStream();
                 NetworkStream stream2 = client2.GetStream();
 
-                byte[] ans1 = new byte[1] { 0 };
-                byte[] ans2 = new byte[1] { 1 };
-                stream1.Write(ans1, 0, 1);
-                stream2.Write(ans2, 0, 1);
-                LogQueue.Enqueue($"Сервером отправлены сообщения: {ans1[0]} , {ans2[0]}");
+                const byte ans_white = 0;
+                const byte ans_black = 1;
+                SendMesseage(ans_white, stream1);
+                SendMesseage(ans_black, stream2);
+                logWriter.Write($"Отправлены номера команд");
 
                 uint id_buff = id;
                 Thread GameManager1 = new Thread(() => ManageGame(client1, client2, id_buff));
@@ -177,31 +163,33 @@ namespace Server
             catch (Exception e)
             {
                 WaitingGames.Remove(id);
-                LogQueue.Enqueue(e.Message);
+                logWriter.Write(e.Message);
             }
         }
 
         static void SendGamesInfo(NetworkStream stream)
         {
-            byte[] GameCount = new byte[1] { (byte)WaitingGames.Count };
             try
             {
-                stream.Write(GameCount, 0, 1);
-                LogQueue.Enqueue($"Отправка {GameCount[0]} записей");
+                byte games_count = (byte)WaitingGames.Count;
+                SendMesseage(games_count, stream);
+                logWriter.Write($"Отправка {games_count} записей");
+
                 foreach (GameInfo game in WaitingGames.Values)
                 {
                     game.Send(stream);
                 }
-                LogQueue.Enqueue("Завершена успешно");
+                logWriter.Write("Завершена успешно");
             }
             catch (Exception e)
             {
-                LogQueue.Enqueue(e.Message);
+                logWriter.Write(e.Message);
             }
         }
 
         static void ManageGame(TcpClient in_client, TcpClient out_client, uint id)
         {
+            const byte exit_code = 111;
             int hash = 0;
             int previous_hash = 0;
             int repeat = 0;
@@ -212,17 +200,17 @@ namespace Server
                 NetworkStream in_stream = in_client.GetStream();
                 NetworkStream out_stream = out_client.GetStream();
 
-                while (move[0] != 111)
+                while (move[0] != exit_code)
                 {
-                    in_stream.Read(move, 0, 5); LogQueue.Enqueue($"Получен ход: {MoveToString(move)}");
-                    out_stream.Write(move, 0, 5); LogQueue.Enqueue($"Отправлен ход: {MoveToString(move)}");
+                    in_stream.Read(move, 0, 5);   logWriter.Write($"Получен ход:   {MoveToString(move)}");
+                    out_stream.Write(move, 0, 5); logWriter.Write($"Отправлен ход: {MoveToString(move)}");
                     if (CheckHash()) throw new Exception($"Потеряно соединение, игра {id} остановлена"); ;
                 }
-                LogQueue.Enqueue("Получено сообщение о выходе");
+                logWriter.Write("Получено сообщение о выходе");
             }
             catch (Exception e)
             {
-                LogQueue.Enqueue(e.Message);
+                logWriter.Write(e.Message);
                 return;
             }
 
@@ -249,44 +237,32 @@ namespace Server
 
         static void CommunicateWithWaitingClient(TcpClient client, uint id)
         {
-            byte[] ContinueWaiting = new byte[1] { 123 };
-            byte[] ClientAnswer = new byte[1];
-            byte expected_ans = 1;
-            while (WaitingGames.ContainsKey(id))
-            {
-                try
-                {
-                    ClientAnswer[0] = 0;
+            const int checks_frequency_millisec = 2000;
+            const byte continue_waiting_ans = 123;
+            const byte expected_ans = 1;
 
-                    NetworkStream stream = client.GetStream();
-                    stream.Write(ContinueWaiting, 0, 1);
-                    stream.Read(ClientAnswer, 0, 1);
-                    LogQueue.Enqueue($"ответ клиента: {ClientAnswer[0]}");
-                    if (ClientAnswer[0] != expected_ans)
+            NetworkStream stream = client.GetStream();
+            try
+            {
+                while (WaitingGames.ContainsKey(id))
+                {
+                    SendMesseage(continue_waiting_ans, stream);
+                    byte client_ans = RecvMesseage(stream);
+                    logWriter.Write($"ответ клиента: {client_ans}");
+                    if (client_ans != expected_ans)
                     {
-                        LogQueue.Enqueue($"Соединение потеряно ");
+                        logWriter.Write($"Соединение потеряно ");
                         WaitingGames.Remove(id);
                         return;
                     }
+                    Thread.Sleep(checks_frequency_millisec);
                 }
-                catch (Exception e)
-                {
-                    LogQueue.Enqueue($"Соединение потеряно ");
-                    LogQueue.Enqueue(e.Message);
-                    WaitingGames.Remove(id);
-                    return;
-                }
-                Thread.Sleep(2000);
             }
-        }
-        static void WriteLogs()
-        {
-            while (true)
+            catch (Exception e)
             {
-                if (LogQueue.Count != 0)
-                {
-                    WriteLog(LogQueue.Dequeue());
-                }
+                logWriter.Write($"Соединение потеряно: {e.Message}");
+                WaitingGames.Remove(id);
+                return;
             }
         }
     }
