@@ -18,6 +18,7 @@ namespace IntellectorServer
         {
             byte[] recv_bytes = new byte[1];
             stream.Read(recv_bytes, 0, 1);
+            LogWriter.WriteImmideate(recv_bytes[0].ToString());
             return recv_bytes[0];
         }
 
@@ -48,6 +49,7 @@ namespace IntellectorServer
         {
             byte[] recv_bytes = new byte[4];
             stream.Read(recv_bytes, 0, 4);
+            LogWriter.WriteImmideate(BitConverter.ToInt32(recv_bytes).ToString());
             return BitConverter.ToInt32(recv_bytes);
         }
 
@@ -70,6 +72,7 @@ namespace IntellectorServer
             int str_len = RecvInt(stream);
             byte[] str_bytes = new byte[str_len];
             stream.Read(str_bytes, 0, str_len);
+            LogWriter.WriteImmideate(Encoding.Default.GetString(str_bytes));
             return Encoding.Default.GetString(str_bytes);
         }
 

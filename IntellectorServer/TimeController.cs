@@ -92,22 +92,26 @@ namespace IntellectorServer
 
         private void LookForOutOfTime()
         {
-            const int look_time = 500;
-            while (game_alive)
+            try
             {
-                if (time_run)
+                const int look_time = 500;
+                while (game_alive)
                 {
-                    DateTime now = DateTime.Now;
-                    int elapsed_time = (int)(now - lust_time).TotalMilliseconds;
-                    if (turn && (elapsed_time >= BlackTime) || !turn && (elapsed_time >= WhiteTime))
+                    if (time_run)
                     {
-                        TimeOutEvent?.Invoke(turn);
-                        time_run = false;
-                        return;
+                        DateTime now = DateTime.Now;
+                        int elapsed_time = (int)(now - lust_time).TotalMilliseconds;
+                        if (turn && (elapsed_time >= BlackTime) || !turn && (elapsed_time >= WhiteTime))
+                        {
+                            TimeOutEvent?.Invoke(turn);
+                            time_run = false;
+                            return;
+                        }
+                        Thread.Sleep(look_time);
                     }
-                    Thread.Sleep(look_time);
                 }
             }
+            catch (Exception e) { LogWriter.StaticWrite(e.ToString()); }
         }
     }
 }

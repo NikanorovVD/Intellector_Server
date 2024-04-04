@@ -22,15 +22,21 @@ namespace IntellectorServer
 
         public void Write(string mes) => LogQueue.Enqueue(mes);
 
+        public static void StaticWrite(string mes) => LogQueue.Enqueue(mes);
+
         public void WriteLogs()
         {
-            while (true)
+            try
             {
-                if (LogQueue.Count != 0)
+                while (true)
                 {
-                    WriteInFile(LogQueue.Dequeue());
+                    if (LogQueue.Count != 0)
+                    {
+                        WriteInFile(LogQueue.Dequeue());
+                    }
                 }
             }
+            catch (Exception) { }
         }
         private void WriteInFile(string messeage)
         {
@@ -39,6 +45,18 @@ namespace IntellectorServer
             {
                 writer.WriteLine(messeage);
             }
+        }
+
+        public static void WriteImmideate(string mes)
+        {
+            try
+            {
+                using (StreamWriter writer = new StreamWriter(LogFilePath, true))
+                {
+                    writer.WriteLine(mes);
+                }
+            }
+            catch { }
         }
     }
 }

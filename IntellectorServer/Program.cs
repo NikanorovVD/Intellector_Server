@@ -27,11 +27,11 @@ namespace IntellectorServer
             logWriter.Start();
 
             Game.logWriter = logWriter;
+            logWriter.Write("Server Start");
             while (true)
             {
                 try
                 {
-                    logWriter.Write($"Ожидание подключения, Ожидает клиентов : {WaitingGames.Count}");
                     serverSocket.Start();
                     TcpClient clientSocket = serverSocket.AcceptTcpClient();
                     logWriter.Write($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
@@ -50,18 +50,18 @@ namespace IntellectorServer
             const byte games_list_request = 100;
             const byte create_game_request = 0;
 
-            if (!CheckPassword())
-            {
-                logWriter.Write("Неверный пароль");
-                client.Close();
-                logWriter.Write("Клиент отключен");
-                return;
-            }
-            logWriter.Write("ПАРОЛЬ ВЕРНЫЙ");
-
-
             try
             {
+                if (!CheckPassword())
+                {
+                    logWriter.Write("Неверный пароль");
+                    client.Close();
+                    logWriter.Write("Клиент отключен");
+                    return;
+                }
+                logWriter.Write("ПАРОЛЬ ВЕРНЫЙ");
+
+
                 NetworkStream stream = client.GetStream();
                 uint wanted_id = RecvCode(stream);
                 if(wanted_id == games_list_request)
@@ -72,7 +72,7 @@ namespace IntellectorServer
                         return;
                     }
 
-                    logWriter.Write("Запрошен список игр");
+                    logWriter.Write("Запрос списка игр");
                     SendGamesInfo(stream);
                     client.Close();
                 }
@@ -97,6 +97,7 @@ namespace IntellectorServer
                         WaitingGame wanted_game = WaitingGames[wanted_id];
                         WaitingGames.Remove(wanted_id);
                         wanted_game.WaitingManager.Join();
+                        logWriter.Write($"Старт игры {wanted_id}");
                         MakeGame(wanted_game, client);
                     }
                     else
@@ -175,9 +176,9 @@ namespace IntellectorServer
             const byte continue_waiting_ans = 123;
             const byte expected_ans = 1;
 
-            NetworkStream stream = client.GetStream();
             try
             {
+                NetworkStream stream = client.GetStream();
                 while (WaitingGames.ContainsKey(id))
                 {
                     SendCode(continue_waiting_ans, stream);
