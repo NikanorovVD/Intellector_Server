@@ -15,7 +15,6 @@ namespace IntellectorServer
         static Dictionary<uint, WaitingGame> WaitingGames;
         static uint game_id = 1;
         static string password = "a3P1>8]Ы-/йЧяЭ975?:$qcDыФ9&e@1a<c{a/";
-        static LogWriter logWriter;
 
         
         static void Main(string[] args)
@@ -23,94 +22,54 @@ namespace IntellectorServer
             serverSocket = new TcpListener(System.Net.IPAddress.Any, 7002);
             WaitingGames = new Dictionary<uint, WaitingGame>();
 
-            logWriter = new LogWriter();
-            logWriter.Start();
-
-            Game.logWriter = logWriter;
-            logWriter.Write("Server Start");
+            LogWriter.WriteLine("Server Start");
             while (true)
             {
                 try
                 {
                     serverSocket.Start();
                     TcpClient clientSocket = serverSocket.AcceptTcpClient();
-                    logWriter.Write($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
-                    ManageNewClient(clientSocket);
+                    LogWriter.WriteLine($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
+
+                    Thread clientManager = new Thread(() => ManageNewClient(clientSocket));
+                    clientManager.Start();
                 }
                 catch (Exception e)
                 {
-                    logWriter.Write(e.Message);
+                    LogWriter.WriteLine(e.Message);
                 }
             }
         }
 
         static void ManageNewClient(TcpClient client)
         {
-            const byte no_such_game_ans = 99;
             const byte games_list_request = 100;
-            const byte create_game_request = 0;
+            const byte join_game_request = 30;
+            const byte create_game_request = 40;
 
             try
             {
-                if (!CheckPassword())
+                ValidateClient(client);
+                while (true)
                 {
-                    logWriter.Write("Неверный пароль");
-                    client.Close();
-                    logWriter.Write("Клиент отключен");
-                    return;
-                }
-                logWriter.Write("ПАРОЛЬ ВЕРНЫЙ");
-
-
-                NetworkStream stream = client.GetStream();
-                uint wanted_id = RecvCode(stream);
-                if(wanted_id == games_list_request)
-                {
-                    if (!CheckVersion())
+                    byte request_code = RecvCode(client.GetStream());
+                    switch (request_code)
                     {
-                        client.Close();
-                        return;
-                    }
-
-                    logWriter.Write("Запрос списка игр");
-                    SendGamesInfo(stream);
-                    client.Close();
-                }
-                else if(wanted_id == create_game_request)
-                {
-                    logWriter.Write("Запрос создания игры");
-                   
-                    GameInfo gameInfo = RecvGameInfo(stream);
-                    WaitingGame game = new WaitingGame(game_id, gameInfo, client);
-                    WaitingGames.Add(game_id, game);
-
-                    logWriter.Write($"Игра успешно создана: {game.GameInfo}");
-                    game_id++; if (game_id == 100) game_id++;
-
-                    game.WaitingManager = new Thread(() => CommunicateWithWaitingClient(client, game.GameInfo.ID));
-                    game.WaitingManager.Start();
-                }
-                else
-                {
-                    if (WaitingGames.ContainsKey(wanted_id))
-                    {
-                        WaitingGame wanted_game = WaitingGames[wanted_id];
-                        WaitingGames.Remove(wanted_id);
-                        wanted_game.WaitingManager.Join();
-                        logWriter.Write($"Старт игры {wanted_id}");
-                        MakeGame(wanted_game, client);
-                    }
-                    else
-                    {
-                        SendCode(no_such_game_ans, client.GetStream());
-                        client.Close();
+                        case games_list_request: GamesListRequest(client); break;
+                        case create_game_request: CreateGameRequest(client); return;
+                        case join_game_request: JoinGameRequest(client); return;
+                        case 0: return;
                     }
                 }
             }
             catch(Exception e)
             {
-                logWriter.Write(e.Message);
+                LogWriter.WriteLine(e.Message);
             }
+        }
+
+        static void ValidateClient(TcpClient client)
+        {
 
             bool CheckPassword()
             {
@@ -131,6 +90,60 @@ namespace IntellectorServer
                 SendInt(server_version, client.GetStream());
                 return client_version == server_version;
             }
+
+            if (!CheckPassword())
+            {
+                LogWriter.WriteLine("Неверный пароль, Клиент отключен");
+                client.Close();
+                return;
+            }
+            if (!CheckVersion())
+            {
+                LogWriter.WriteLine("Неподходящая версия клиента");
+                client.Close();
+                return;
+            }
+            LogWriter.WriteLine("ПАРОЛЬ ВЕРНЫЙ");
+        }
+        static void GamesListRequest(TcpClient client)
+        {
+            LogWriter.WriteLine("Запрос списка игр");
+            SendGamesInfo(client.GetStream());
+        }
+        static void CreateGameRequest(TcpClient client)
+        {
+            LogWriter.WriteLine("Запрос создания игры");
+
+            GameInfo gameInfo = RecvGameInfo(client.GetStream());
+            WaitingGame game = new WaitingGame(game_id, gameInfo, client);
+            WaitingGames.Add(game_id, game);
+
+            LogWriter.WriteLine($"Игра успешно создана: {game.GameInfo}");
+            game_id++; 
+
+            CommunicateWithWaitingClient(client, game.GameInfo.ID);
+        }
+        static void JoinGameRequest(TcpClient client)
+        {
+            const byte no_such_game_ans = 99;
+
+            LogWriter.WriteLine("Запрос присоединения к игре");
+            byte wanted_id = RecvCode(client.GetStream());
+
+            if (WaitingGames.ContainsKey(wanted_id))
+            {
+                WaitingGame wanted_game = WaitingGames[wanted_id];
+                WaitingGames.Remove(wanted_id);
+
+                SendGameInfo(wanted_game.GameInfo, client.GetStream());
+
+                LogWriter.WriteLine($"Старт игры {wanted_id}");
+                MakeGame(wanted_game, client);
+            }
+            else
+            {
+                SendCode(no_such_game_ans, client.GetStream());
+            }
         }
 
         static void MakeGame(WaitingGame waiting_client, TcpClient new_client)
@@ -139,14 +152,12 @@ namespace IntellectorServer
             {
                 Game game = new Game(waiting_client, new_client);
                 game.SendTeams();
-                SendGameInfo(waiting_client.GameInfo, waiting_client.Client.GetStream());
-                SendGameInfo(waiting_client.GameInfo, new_client.GetStream());
                 game.Start();
             }
             catch (Exception e)
             {
                 WaitingGames.Remove(waiting_client.GameInfo.ID);
-                logWriter.Write(e.Message);
+                LogWriter.WriteLine(e.Message);
             }
         }
 
@@ -154,19 +165,15 @@ namespace IntellectorServer
         {
             try
             {
-                int games_count = WaitingGames.Count;
-                SendInt(games_count, stream);
-                logWriter.Write($"Отправка {games_count} записей");
-
+                SendInt(WaitingGames.Count, stream);
                 foreach (WaitingGame game in WaitingGames.Values)
                 {
                     SendGameInfo(game.GameInfo, stream);
                 } 
-                logWriter.Write("Завершена успешно");
             }
             catch (Exception e)
             {
-                logWriter.Write(e.Message);
+                LogWriter.WriteLine(e.Message);
             }
         }
 
@@ -183,10 +190,11 @@ namespace IntellectorServer
                 {
                     SendCode(continue_waiting_ans, stream);
                     byte client_ans = RecvCode(stream);
-                    logWriter.Write($"ответ клиента: {client_ans}");
+                    LogWriter.WriteLine($"ответ клиента: {client_ans}");
                     if (client_ans != expected_ans)
                     {
-                        logWriter.Write($"Соединение потеряно ");
+                        LogWriter.WriteLine($"отмена ожидания");
+                        client.Close();
                         WaitingGames.Remove(id);
                         return;
                     }
@@ -195,7 +203,7 @@ namespace IntellectorServer
             }
             catch (Exception e)
             {
-                logWriter.Write($"Соединение потеряно: {e.Message}");
+                LogWriter.WriteLine(e.Message);
                 WaitingGames.Remove(id);
                 return;
             }

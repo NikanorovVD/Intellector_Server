@@ -111,7 +111,7 @@ namespace IntellectorServer
                     }
                 }
             }
-            catch (Exception e) { LogWriter.StaticWrite(e.ToString()); }
+            catch (Exception e) { LogWriter.WriteLine(e.ToString()); }
         }
     }
 }

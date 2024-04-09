@@ -19,9 +19,6 @@ namespace IntellectorServer
     {
         public GameInfo GameInfo { get; private set; }
         public TcpClient Client { get; set; }
-        public Thread WaitingManager { get; set; }
-
-        public static int max_name_length = 20;
 
         public WaitingGame(uint id, GameInfo gameInfo, TcpClient client)
         {

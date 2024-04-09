@@ -12,7 +12,6 @@ namespace IntellectorServer
 {
     class Game
     {
-        public static LogWriter logWriter;
         public uint ID;
         public TcpClient WhitePlayer { get; private set; }
         public TcpClient BlackPlayer { get; private set; }
@@ -78,8 +77,8 @@ namespace IntellectorServer
             const byte rematch_code = 222;
 
             byte input_code = 0;
-            int hash = 0;
-            int previous_hash = 0;
+            int sum = 0;
+            int previous_sum = 0;
             int repeat = 0;
             byte[] move = new byte[5];
 
@@ -94,18 +93,18 @@ namespace IntellectorServer
                     switch (input_code)
                     {
                         case move_code:
-                            move = RecvMove(in_stream); logWriter.Write($"Получен ход:   {MoveToString(move)}");
+                            move = RecvMove(in_stream); LogWriter.WriteLine($"Получен ход:   {MoveToString(move)}");
                             if (team) time_controller?.BlackMakeMove();
                             else time_controller?.WhiteMakeMove();
 
-                            SendMove(move, out_stream); logWriter.Write($"Отправлен ход: {MoveToString(move)}");
+                            SendMove(move, out_stream); LogWriter.WriteLine($"Отправлен ход: {MoveToString(move)}");
                             if (time_controller != null)
                             {
                                 int time = (team) ? time_controller.BlackTime : time_controller.WhiteTime;
                                 SendTime(time, out_stream);
                                 SendTime(time, in_stream);
                             }
-                            if (CheckHash()) throw new Exception($"Потеряно соединение, игра {ID} остановлена");
+                            if (CheckSum()) throw new Exception($"Потеряно соединение, игра {ID} остановлена");
                             break;
                         case rematch_code:
                             SendCode(rematch_code, out_stream);
@@ -120,31 +119,26 @@ namespace IntellectorServer
                     }
                     
                 }
-                logWriter.Write("Получено сообщение о выходе");
+                LogWriter.WriteLine("Получено сообщение о выходе");
             }
             catch (Exception e)
             {
                 time_controller?.Stop();
-                logWriter.Write(e.Message);
+                LogWriter.WriteLine(e.Message);
                 return;
             }
 
             string MoveToString(byte[] move)
             {
-                string res = String.Empty;
-                foreach (byte b in move)
-                {
-                    res += b.ToString() + ' ';
-                }
-                return res;
+                return String.Join(' ', move);
             }
 
-            bool CheckHash()
+            bool CheckSum()
             {
-                hash = move[0] + move[1] + move[2] + move[3] + move[4];
-                if (hash == previous_hash) repeat++;
+                sum = move[0] + move[1] + move[2] + move[3] + move[4];
+                if (sum == previous_sum) repeat++;
                 else repeat = 0;
-                previous_hash = hash;
+                previous_sum = sum;
                 return (repeat >= 10);
             }
         }
