@@ -66,9 +66,7 @@ namespace IntellectorServer
 
         private void SubtractWhiteTime(int time)
         {
-            Console.WriteLine($"потрачено времени белыми: {time}");
             WhiteTime -= time;
-            Console.WriteLine($"временя белых: {WhiteTime}");
             if (WhiteTime >= 0) WhiteTime += added_time;
             else
             {
@@ -79,9 +77,7 @@ namespace IntellectorServer
 
         private void SubtractBlackTime(int time)
         {
-            Console.WriteLine($"потрачено времени черными: {time}");
             BlackTime -= time;
-            Console.WriteLine($"временя черных: {BlackTime}");
             if (BlackTime >= 0) BlackTime += added_time;
             else
             {

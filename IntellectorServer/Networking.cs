@@ -93,5 +93,16 @@ namespace IntellectorServer
             ColorChoice color = (ColorChoice)RecvInt(stream);
             return new GameInfo { Name = name, TimeContol = new(max_time, add_time), ColorChoice = color };
         }
+
+        static public string RecvPassword(NetworkStream stream)
+        {
+            int password_len = Encoding.Default.GetBytes(Settings.Instance.Password).Length;
+            int str_len = RecvInt(stream);
+            if (str_len != password_len) return string.Empty;
+
+            byte[] str_bytes = new byte[password_len];
+            stream.Read(str_bytes, 0, password_len);
+            return Encoding.Default.GetString(str_bytes);
+        }
     }
 }

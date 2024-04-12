@@ -3,20 +3,17 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
 using System.IO;
-using System.Text;
+using System.Text.Json;
 using static IntellectorServer.Networking;
 
 namespace IntellectorServer
 {
     class Program
     {
-        static int server_version = 14;
         static TcpListener serverSocket;
         static Dictionary<uint, WaitingGame> WaitingGames;
         static uint game_id = 1;
-        static string password = "a3P1>8]Ы-/йЧяЭ975?:$qcDыФ9&e@1a<c{a/";
 
-        
         static void Main(string[] args)
         {
             serverSocket = new TcpListener(System.Net.IPAddress.Any, 7002);
@@ -75,8 +72,8 @@ namespace IntellectorServer
             {
                 try
                 {
-                    string ans_string = RecvString(client.GetStream());
-                    return ans_string == password;
+                    string ans_string = RecvPassword(client.GetStream());
+                    return ans_string == Settings.Instance.Password; 
                 }
                 catch (Exception)
                 {
@@ -87,8 +84,8 @@ namespace IntellectorServer
             bool CheckVersion()
             {
                 int client_version = RecvInt(client.GetStream());
-                SendInt(server_version, client.GetStream());
-                return client_version == server_version;
+                SendInt(Settings.Instance.Version, client.GetStream());
+                return client_version == Settings.Instance.Version;
             }
 
             if (!CheckPassword())

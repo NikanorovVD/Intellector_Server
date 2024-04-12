@@ -1,3 +1,4 @@
 IntellectorServer/bin/
 IntellectorServer/obj/
 .vs/
+IntellectorServer/appsettings.json
