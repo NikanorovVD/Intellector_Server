@@ -1,208 +1,120 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Net.Sockets;
-using System.Threading;
+using System.Threading.Tasks;
 using System.IO;
+using Microsoft.Extensions.Configuration;
+using DataLayer;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
-using static IntellectorServer.Networking;
+using IntellectorServer.Models;
+using IntellectorServer.Models.Errors;
+using Microsoft.Extensions.DependencyInjection;
+using IntellectorServer.Constants;
+using IntellectorServer.Core;
+
 
 namespace IntellectorServer
 {
     class Program
     {
-        static TcpListener serverSocket;
-        static Dictionary<uint, WaitingGame> WaitingGames;
-        static uint game_id = 1;
+        private static TcpListener serverSocket;
 
         static void Main(string[] args)
         {
-            serverSocket = new TcpListener(System.Net.IPAddress.Any, 7002);
-            WaitingGames = new Dictionary<uint, WaitingGame>();
+            var services = CreateServices();
+            IConfiguration configuration = services.GetRequiredService<IConfiguration>();
 
-            LogWriter.WriteLine("Server Start");
+            serverSocket = new TcpListener(System.Net.IPAddress.Any, int.Parse(configuration[Settings.Port]));
+
             while (true)
             {
-                try
-                {
-                    serverSocket.Start();
-                    TcpClient clientSocket = serverSocket.AcceptTcpClient();
-                    LogWriter.WriteLine($"{DateTime.Now} : Подключение установлено c {clientSocket.Client.RemoteEndPoint}");
-
-                    Thread clientManager = new Thread(() => ManageNewClient(clientSocket));
-                    clientManager.Start();
-                }
-                catch (Exception e)
-                {
-                    LogWriter.WriteLine(e.Message);
-                }
+                AsseptClient(configuration);
             }
         }
 
-        static void ManageNewClient(TcpClient client)
+        private static ServiceProvider CreateServices()
         {
-            const byte games_list_request = 100;
-            const byte join_game_request = 30;
-            const byte create_game_request = 40;
+            string workingDirectory = Environment.CurrentDirectory;
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetParent(workingDirectory).Parent.Parent.FullName)
+                .AddJsonFile("appsettings.json", optional: false)
+                .AddJsonFile("appsettings.Development.json", optional: true);
 
+            IConfiguration configuration = builder.Build();
+
+            var serviceProvider = new ServiceCollection()
+                .AddDbContext<AppDbContext>(options => options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")))
+                .AddSingleton(configuration)
+                .BuildServiceProvider();
+
+            return serviceProvider;
+        }
+
+        private static void AsseptClient(IConfiguration configuration)
+        {
             try
             {
-                ValidateClient(client);
+                serverSocket.Start();
+                TcpClient clientSocket = serverSocket.AcceptTcpClient();
+
+                Connection connection = new Connection(clientSocket);
+                Message loginMessage = connection.ReceiveMessage();
+
+                if (loginMessage.Method != Methods.Login)
+                {
+                    connection.Client.Close();
+                    return;
+                }
+
+                LoginRequest loginRequest = JsonSerializer.Deserialize<LoginRequest>(loginMessage.Body);
+                // аутентификация, уствновка User
+
+                if (loginRequest.APIKey != configuration[Settings.APIKey])
+                {
+                    connection.Client.Close();
+                }
+
+                if (loginRequest.Version != configuration[Settings.Version])
+                {
+                    connection.SendMessage<VersionError>(Methods.Error, new()
+                    {
+                        ClientVersion = loginRequest.Version,
+                        ServerVersion = configuration[Settings.Version]
+                    });
+                    connection.Client.Close();
+                }
+
+                TaskFactory taskFactory = new TaskFactory();
+                Task clientManager = taskFactory.StartNew(
+                    () => ManageClient(connection),
+                    TaskCreationOptions.LongRunning
+                    );
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
+        }
+
+        static void ManageClient(Connection connection)
+        {
+            TcpClient client = connection.Client;
+            try
+            {
                 while (true)
                 {
-                    byte request_code = RecvCode(client.GetStream());
-                    switch (request_code)
+                    Message message = connection.ReceiveMessage();
+
+                    switch (message.Method)
                     {
-                        case games_list_request: GamesListRequest(client); break;
-                        case create_game_request: CreateGameRequest(client); return;
-                        case join_game_request: JoinGameRequest(client); return;
-                        case 0: return;
+                        //Methods
+                        default: throw new Exception($"Unexpected method: {message.Method}");
                     }
                 }
             }
-            catch(Exception e)
-            {
-                LogWriter.WriteLine(e.Message);
-            }
-        }
-
-        static void ValidateClient(TcpClient client)
-        {
-
-            bool CheckPassword()
-            {
-                try
-                {
-                    string ans_string = RecvPassword(client.GetStream());
-                    return ans_string == Settings.Instance.Password; 
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
-            }
-
-            bool CheckVersion()
-            {
-                int client_version = RecvInt(client.GetStream());
-                SendInt(Settings.Instance.Version, client.GetStream());
-                return client_version == Settings.Instance.Version;
-            }
-
-            if (!CheckPassword())
-            {
-                LogWriter.WriteLine("Неверный пароль, Клиент отключен");
-                client.Close();
-                return;
-            }
-            if (!CheckVersion())
-            {
-                LogWriter.WriteLine("Неподходящая версия клиента");
-                client.Close();
-                return;
-            }
-            LogWriter.WriteLine("ПАРОЛЬ ВЕРНЫЙ");
-        }
-        static void GamesListRequest(TcpClient client)
-        {
-            LogWriter.WriteLine("Запрос списка игр");
-            SendGamesInfo(client.GetStream());
-        }
-        static void CreateGameRequest(TcpClient client)
-        {
-            LogWriter.WriteLine("Запрос создания игры");
-
-            GameInfo gameInfo = RecvGameInfo(client.GetStream());
-            WaitingGame game = new WaitingGame(game_id, gameInfo, client);
-            WaitingGames.Add(game_id, game);
-
-            LogWriter.WriteLine($"Игра успешно создана: {game.GameInfo}");
-            game_id++; 
-
-            CommunicateWithWaitingClient(client, game.GameInfo.ID);
-        }
-        static void JoinGameRequest(TcpClient client)
-        {
-            const byte no_such_game_ans = 99;
-
-            LogWriter.WriteLine("Запрос присоединения к игре");
-            byte wanted_id = RecvCode(client.GetStream());
-
-            if (WaitingGames.ContainsKey(wanted_id))
-            {
-                WaitingGame wanted_game = WaitingGames[wanted_id];
-                WaitingGames.Remove(wanted_id);
-
-                SendGameInfo(wanted_game.GameInfo, client.GetStream());
-
-                LogWriter.WriteLine($"Старт игры {wanted_id}");
-                MakeGame(wanted_game, client);
-            }
-            else
-            {
-                SendCode(no_such_game_ans, client.GetStream());
-            }
-        }
-
-        static void MakeGame(WaitingGame waiting_client, TcpClient new_client)
-        {
-            try
-            {
-                Game game = new Game(waiting_client, new_client);
-                game.SendTeams();
-                game.Start();
-            }
             catch (Exception e)
             {
-                WaitingGames.Remove(waiting_client.GameInfo.ID);
-                LogWriter.WriteLine(e.Message);
-            }
-        }
-
-        static void SendGamesInfo(NetworkStream stream)
-        {
-            try
-            {
-                SendInt(WaitingGames.Count, stream);
-                foreach (WaitingGame game in WaitingGames.Values)
-                {
-                    SendGameInfo(game.GameInfo, stream);
-                } 
-            }
-            catch (Exception e)
-            {
-                LogWriter.WriteLine(e.Message);
-            }
-        }
-
-        static void CommunicateWithWaitingClient(TcpClient client, uint id)
-        {
-            const int checks_frequency_millisec = 500;
-            const byte continue_waiting_ans = 123;
-            const byte expected_ans = 1;
-
-            try
-            {
-                NetworkStream stream = client.GetStream();
-                while (WaitingGames.ContainsKey(id))
-                {
-                    SendCode(continue_waiting_ans, stream);
-                    byte client_ans = RecvCode(stream);
-                    LogWriter.WriteLine($"ответ клиента: {client_ans}");
-                    if (client_ans != expected_ans)
-                    {
-                        LogWriter.WriteLine($"отмена ожидания");
-                        client.Close();
-                        WaitingGames.Remove(id);
-                        return;
-                    }
-                    Thread.Sleep(checks_frequency_millisec);
-                }
-            }
-            catch (Exception e)
-            {
-                LogWriter.WriteLine(e.Message);
-                WaitingGames.Remove(id);
-                return;
+                Console.WriteLine(e.Message);
             }
         }
     }

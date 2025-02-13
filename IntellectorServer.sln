@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.33027.164
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IntellectorServer", "IntellectorServer\IntellectorServer.csproj", "{404C450A-EC62-4E14-BA8B-042CB8A516DC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DataLayer", "DataLayer\DataLayer.csproj", "{013E451C-45E2-4D5F-A081-2F93E3F81A6D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{404C450A-EC62-4E14-BA8B-042CB8A516DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{404C450A-EC62-4E14-BA8B-042CB8A516DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{404C450A-EC62-4E14-BA8B-042CB8A516DC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{013E451C-45E2-4D5F-A081-2F93E3F81A6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{013E451C-45E2-4D5F-A081-2F93E3F81A6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{013E451C-45E2-4D5F-A081-2F93E3F81A6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{013E451C-45E2-4D5F-A081-2F93E3F81A6D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
