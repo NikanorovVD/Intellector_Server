@@ -1,4 +1,5 @@
 ﻿using IntellectorServer.Models;
+using System;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -52,6 +53,7 @@ namespace IntellectorServer.Core
         public Message ReceiveMessage()
         {
             string content = RecvString(Stream);
+            Console.WriteLine(content);
             return JsonSerializer.Deserialize<Message>(content);
         }
 

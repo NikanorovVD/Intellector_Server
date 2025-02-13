@@ -18,17 +18,16 @@ namespace IntellectorServer
     class Program
     {
         private static TcpListener serverSocket;
-
+        private static IServiceProvider globalServiceProvider;
         static void Main(string[] args)
         {
-            var services = CreateServices();
-            IConfiguration configuration = services.GetRequiredService<IConfiguration>();
+            globalServiceProvider = CreateServices();
+            IConfiguration configuration = globalServiceProvider.GetRequiredService<IConfiguration>();
 
             serverSocket = new TcpListener(System.Net.IPAddress.Any, int.Parse(configuration[Settings.Port]));
-
             while (true)
             {
-                AsseptClient(configuration);
+                AsseptClient();
             }
         }
 
@@ -50,15 +49,21 @@ namespace IntellectorServer
             return serviceProvider;
         }
 
-        private static void AsseptClient(IConfiguration configuration)
+        private static void AsseptClient()
         {
             try
             {
                 serverSocket.Start();
                 TcpClient clientSocket = serverSocket.AcceptTcpClient();
 
+                IServiceScope serviceScope = globalServiceProvider.CreateScope();
+                IServiceProvider serviceProvider = serviceScope.ServiceProvider;
+                IConfiguration configuration = serviceProvider.GetRequiredService<IConfiguration>();
+                AppDbContext dbContext = serviceProvider.GetRequiredService<AppDbContext>();
+
                 Connection connection = new Connection(clientSocket);
                 Message loginMessage = connection.ReceiveMessage();
+                Console.WriteLine(loginMessage);
 
                 if (loginMessage.Method != Methods.Login)
                 {

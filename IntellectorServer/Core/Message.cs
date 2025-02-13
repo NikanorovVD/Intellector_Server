@@ -4,5 +4,10 @@
     {
         public string Method { get; set; }
         public string Body { get; set; }
+
+        public override string ToString()
+        {
+            return $"{Method}: {Body}";
+        }
     }
 }
